@@ -382,6 +382,12 @@ TEST_F( utglTF2ImportExport, bug_import_simple_skin ) {
     EXPECT_NE( nullptr, scene );
 }
 
+TEST_F( utglTF2ImportExport, import_sparse_accessors) {
+    Assimp::Importer importer;
+    const aiScene *scene = importer.ReadFile( ASSIMP_TEST_MODELS_DIR "/glTF2/blendshape_sparse/head.gltf", aiProcess_ValidateDataStructure );
+    EXPECT_NE( nullptr, scene );
+}
+
 #ifndef ASSIMP_BUILD_NO_EXPORT
 TEST_F( utglTF2ImportExport, exportglTF2FromFileTest ) {
     EXPECT_TRUE( exporterTest() );

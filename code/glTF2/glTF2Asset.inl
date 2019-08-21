@@ -564,6 +564,146 @@ inline void BufferView::Read(Value& obj, Asset& r)
 // struct Accessor
 //
 
+inline Accessor::Sparse::Sparse(Accessor& acc)
+    : count(0), indices(*this), values(Values(acc))
+{
+
+}
+
+inline void Accessor::Sparse::Read(Value& obj, Asset& r) {
+    count = MemberOrDefault(obj, "count", size_t(0));
+    if(Value* indicesVal = FindMember(obj, "indices")) {
+        indices.Read(*indicesVal, r);
+    }
+
+    if(Value* valuesVal = FindMember(obj, "values")) {
+        values.Read(*valuesVal, r);
+    }
+}
+
+inline Accessor::Sparse::Indices::Indices(Sparse& sp)
+    : sp(sp)
+{
+
+}
+
+inline void Accessor::Sparse::Indices::Read(Value& obj, Asset& r) {
+    if (Value* bufferViewVal = FindUInt(obj, "bufferView")) {
+        bufferView = r.bufferViews.Retrieve(bufferViewVal->GetUint());
+    }
+    byteOffset = MemberOrDefault(obj, "byteOffset", size_t(0));
+    componentType = MemberOrDefault(obj, "componentType", ComponentType_BYTE);
+}
+
+inline unsigned int Accessor::Sparse::Indices::GetBytesPerComponent()
+{
+    return int(ComponentTypeSize(componentType));
+}
+
+inline unsigned int Accessor::Sparse::Indices::GetElementSize()
+{
+    return GetBytesPerComponent();
+}
+
+inline uint8_t* Accessor::Sparse::Indices::GetPointer()
+{
+    if (!bufferView || !bufferView->buffer) return 0;
+    uint8_t* basePtr = bufferView->buffer->GetPointer();
+    if (!basePtr) return 0;
+
+    size_t offset = byteOffset + bufferView->byteOffset;
+
+	// Check if region is encoded.
+	if(bufferView->buffer->EncodedRegion_Current != nullptr)
+	{
+		const size_t begin = bufferView->buffer->EncodedRegion_Current->Offset;
+		const size_t end = begin + bufferView->buffer->EncodedRegion_Current->DecodedData_Length;
+
+		if((offset >= begin) && (offset < end))
+			return &bufferView->buffer->EncodedRegion_Current->DecodedData[offset - begin];
+	}
+
+	return basePtr + offset;
+}
+
+template<class T>
+bool Accessor::Sparse::Indices::ExtractData(T*& outData)
+{
+    uint8_t* data = GetPointer();
+    if (!data) return false;
+
+    const size_t elemSize = GetElementSize();
+    const size_t totalSize = elemSize * sp.count;
+
+    const size_t stride = bufferView && bufferView->byteStride ? bufferView->byteStride : elemSize;
+
+    const size_t targetElemSize = sizeof(T);
+    ai_assert(elemSize <= targetElemSize);
+
+    ai_assert(sp.count*stride <= bufferView->byteLength);
+
+    outData = new T[sp.count];
+    if (stride == elemSize && targetElemSize == elemSize) {
+        memcpy(outData, data, totalSize);
+    }
+    else {
+        for (size_t i = 0; i < sp.count; ++i) {
+            memcpy(outData + i, data + i*stride, elemSize);
+        }
+    }
+
+    return true;
+}
+
+inline Accessor::Sparse::Values::Values(Accessor& acc)
+    : accessor(acc)
+{
+
+}
+
+inline void Accessor::Sparse::Values::Read(Value& obj, Asset& r) {
+    if (Value* bufferViewVal = FindUInt(obj, "bufferView")) {
+        bufferView = r.bufferViews.Retrieve(bufferViewVal->GetUint());
+    }
+    byteOffset = MemberOrDefault(obj, "byteOffset", size_t(0));
+}
+
+inline unsigned int Accessor::Sparse::Values::GetNumComponents()
+{
+    return accessor.GetNumComponents();
+}
+
+inline unsigned int Accessor::Sparse::Values::GetBytesPerComponent()
+{
+    return accessor.GetBytesPerComponent();
+}
+
+inline unsigned int Accessor::Sparse::Values::GetElementSize()
+{
+    return accessor.GetElementSize();
+}
+
+inline uint8_t* Accessor::Sparse::Values::GetPointer()
+{
+    if (!bufferView || !bufferView->buffer) return 0;
+    uint8_t* basePtr = bufferView->buffer->GetPointer();
+    if (!basePtr) return 0;
+
+    size_t offset = byteOffset + bufferView->byteOffset;
+
+	// Check if region is encoded.
+	if(bufferView->buffer->EncodedRegion_Current != nullptr)
+	{
+		const size_t begin = bufferView->buffer->EncodedRegion_Current->Offset;
+		const size_t end = begin + bufferView->buffer->EncodedRegion_Current->DecodedData_Length;
+
+		if((offset >= begin) && (offset < end))
+			return &bufferView->buffer->EncodedRegion_Current->DecodedData[offset - begin];
+	}
+
+	return basePtr + offset;
+}
+
 inline void Accessor::Read(Value& obj, Asset& r)
 {
 
@@ -577,6 +717,11 @@ inline void Accessor::Read(Value& obj, Asset& r)
 
     const char* typestr;
     type = ReadMember(obj, "type", typestr) ? AttribType::FromString(typestr) : AttribType::SCALAR;
+
+    if (Value* sparseAccessorVal = FindMember(obj, "sparse")) {
+        sparse.reset(new Sparse(*this));
+        sparse->Read(*sparseAccessorVal, r);
+    }
 }
 
 inline unsigned int Accessor::GetNumComponents()
@@ -640,6 +785,8 @@ namespace {
 template<class T>
 bool Accessor::ExtractData(T*& outData)
 {
+    // TODO(phg): Need to update this function to properly handle sparse
+    //  accessors
     uint8_t* data = GetPointer();
     if (!data) return false;
 

@@ -432,6 +432,56 @@ namespace glTF2
     //! similar to how WebGL's vertexAttribPointer() defines an attribute in a buffer.
     struct Accessor : public Object
     {
+        //! Sparse storage of attributes that deviate from their initialization value.
+        struct Sparse : public Object {
+            struct Indices {
+                Sparse& sp;
+                Ref<BufferView> bufferView;  //!< The ID of the bufferView. (required)
+                size_t byteOffset;           //!< The offset relative to the start of the bufferView in bytes. 0 by default.
+                ComponentType componentType; //!< The datatype of components in the attribute. One of UNSIGNED_INT, UNSIGNED_SHORT, UNSIGNED_BYTE (required)
+
+                unsigned int GetBytesPerComponent();
+                unsigned int GetElementSize();
+
+                inline uint8_t* GetPointer();
+
+                template<class T>
+                bool ExtractData(T*& outData);
+
+                void WriteData(size_t count, const void* src_buffer, size_t src_stride);
+
+                Indices(Sparse& s);
+                void Read(Value& obj, Asset& r);
+            };
+
+            struct Values {
+                Accessor& accessor;
+                Ref<BufferView> bufferView;  //!< The ID of the bufferView. (required)
+                size_t byteOffset;           //!< The offset relative to the start of the bufferView in bytes. 0 by default.
+
+                unsigned int GetNumComponents();
+                unsigned int GetBytesPerComponent();
+                unsigned int GetElementSize();
+
+                inline uint8_t* GetPointer();
+
+                template<class T>
+                bool ExtractData(T*& outData);
+
+                void WriteData(size_t count, const void* src_buffer, size_t src_stride);
+
+                Values(Accessor& acc);
+                void Read(Value& obj, Asset& r);
+            };
+
+            size_t count;       //!< The number of attributes encoded in this sparse accessor. Minmum value is 1.
+            Indices indices;    //!< Index array of size count that points to those accessor attributes that deviate from their initialization value. Indices must strictly increase.
+            Values values;      //!< Array of size count times number of components, storing the displaced accessor attributes pointed by indices. 
+
+            Sparse(Accessor& acc);
+            void Read(Value& obj, Asset& r);
+        };     
+        
         Ref<BufferView> bufferView;  //!< The ID of the bufferView. (required)
         size_t byteOffset;           //!< The offset relative to the start of the bufferView in bytes. (required)
         ComponentType componentType; //!< The datatype of components in the attribute. (required)
@@ -439,6 +489,7 @@ namespace glTF2
         AttribType::Value type;      //!< Specifies if the attribute is a scalar, vector, or matrix. (required)
         std::vector<float> max;      //!< Maximum value of each component in this attribute.
         std::vector<float> min;      //!< Minimum value of each component in this attribute.
+        std::shared_ptr<Sparse> sparse;  //!< Sparse storage of attributes that deviate from their initialization value.
 
         unsigned int GetNumComponents();
         unsigned int GetBytesPerComponent();
@@ -483,7 +534,7 @@ namespace glTF2
         inline Indexer GetIndexer()
         {
             return Indexer(*this);
-        }
+        }   
 
         Accessor() {}
         void Read(Value& obj, Asset& r);
